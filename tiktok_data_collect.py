@@ -13,6 +13,7 @@ Result is written to a Parquet file ready for ML ingestion.
 import os, re, json, time, random, datetime as dt
 import asyncio
 from pathlib import Path
+import traceback
 from typing import List, Dict
 import pandas as pd
 from PIL import Image
@@ -21,15 +22,15 @@ from tqdm import tqdm
 from TikTokApi import TikTokApi
 
 # ---------- tweakables ----------
-SEARCH_TERMS  = ["beauty", "makeup", "cosmetics", "skincare"]
-VIDEOS_PER_TAG     = 500          # stop earlier if you like
+SEARCH_TERMS  = ["beauty"] #, "makeup", "cosmetics", "skincare"
+VIDEOS_PER_TAG     = 100          # stop earlier if you like
 REQUEST_CAP        = 500          # hard maximum attempts per run
 OUT_DIR            = Path("tiktok_data")
 THUMBS_DIR         = OUT_DIR / "thumbnails"
 THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 # --------------------------------
-
-TARGET_DATE = (dt.datetime.utcnow() - dt.timedelta(days=30)).date()
+# 
+TARGET_DATE = (dt.datetime.utcnow() - dt.timedelta(days=1)).date() #change targetdate
 TARGET_START = dt.datetime.combine(TARGET_DATE, dt.time.min).timestamp()
 TARGET_END   = dt.datetime.combine(TARGET_DATE, dt.time.max).timestamp()
 
@@ -83,12 +84,20 @@ async def main():
                 pbar = tqdm(total=VIDEOS_PER_TAG, desc=f"Processing {search_term}")
                 
                 # Get the search results
-                search_results = api.search.search_type(search_term, "video", count=VIDEOS_PER_TAG)
+                tag = api.hashtag(name=search_term)
                 print(f"Starting search for {search_term}")
                 
+                # try:
+                #     first_video = await anext(search_results)
+                #     print(f"✅ Successfully got a video: {first_video.id}")
+                # except StopAsyncIteration:
+                #     print("❌ search_results is EMPTY!")
+                # except Exception as e:
+                #     print(f"❌ Error when fetching first video: {e}")
+                #     traceback.print_exc()
+
                 # Process each video
-                async for video in search_results:
-                    print("Processing video:", video.id)
+                async for video in tag.videos(count=VIDEOS_PER_TAG):
                     if attempts >= REQUEST_CAP:
                         print("Reached request cap")
                         break
@@ -96,28 +105,31 @@ async def main():
                     attempts += 1
                     
                     # Filter by timestamp
-                    if not (TARGET_START <= video.create_time <= TARGET_END):
+                    if not (TARGET_START <= video.create_time.timestamp() <= TARGET_END):
                         print(f"Skipping video {video.id} - wrong timestamp")
                         pbar.update(1)
                         continue
 
                     # Basic metadata
                     stats = video.stats
+                    videoDict = video.as_dict
                     author = video.author
+                    authorDict = author.as_dict
+                    print("authorDict: ", authorDict)
                     row = {
                         "video_id"      : video.id,
-                        "posted_ts"     : dt.datetime.utcfromtimestamp(video.create_time),
-                        "description"   : video.desc,
-                        "hashtags"      : extract_hashtags(video.desc),
-                        "author_id"     : author.id,
-                        "author_name"   : author.uniqueId,
-                        "follower_count": author.stats["followerCount"],
+                        "posted_ts"     : video.create_time.timestamp(),
+                        "description"   : videoDict["desc"],
+                        "hashtags"      : extract_hashtags(videoDict["desc"]),
+                        "author_id"     : author.user_id,
+                        "author_name"   : author.username,
+                        "follower_count": authorDict["followerCount"],
                         "view_count"    : stats["playCount"],
                         "like_count"    : stats["diggCount"],
                         "share_count"   : stats["shareCount"],
                         "comment_count" : stats["commentCount"],
                     }
-
+                    print("row: ", row)
                     # Thumbnail
                     thumb_path = THUMBS_DIR / f"{video.id}.jpg"
                     if not thumb_path.exists():   # avoid re-download
