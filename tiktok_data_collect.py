@@ -20,6 +20,7 @@ from PIL import Image
 from io import BytesIO
 from tqdm import tqdm
 from TikTokApi import TikTokApi
+import requests
 
 # ---------- tweakables ----------
 SEARCH_TERMS  = ["beauty"] #, "makeup", "cosmetics", "skincare"
@@ -111,30 +112,44 @@ async def main():
                         continue
 
                     # Basic metadata
-                    stats = video.stats
                     videoDict = video.as_dict
+                    print("videoDict: ", json.dumps(videoDict, indent=4))
+
+                    stats = video.stats
                     author = video.author
-                    authorDict = author.as_dict
-                    print("authorDict: ", authorDict)
+                    authorStats = videoDict["authorStats"]
+                    # authorDict = author.as_dict
+                    # authorInfo = await author.info()
+
+                    # print("authorDict: ", json.dumps(authorDict, indent=4))
+                    # print("authorInfo: ", json.dumps(authorInfo, indent=4))
+
                     row = {
                         "video_id"      : video.id,
                         "posted_ts"     : video.create_time.timestamp(),
                         "description"   : videoDict["desc"],
-                        "hashtags"      : extract_hashtags(videoDict["desc"]),
+                        #"hashtags"      : extract_hashtags(videoDict["desc"]),
                         "author_id"     : author.user_id,
                         "author_name"   : author.username,
-                        "follower_count": authorDict["followerCount"],
+                        "follower_count": authorStats["followerCount"],
                         "view_count"    : stats["playCount"],
                         "like_count"    : stats["diggCount"],
                         "share_count"   : stats["shareCount"],
                         "comment_count" : stats["commentCount"],
                     }
-                    print("row: ", row)
+                    
                     # Thumbnail
                     thumb_path = THUMBS_DIR / f"{video.id}.jpg"
                     if not thumb_path.exists():   # avoid re-download
                         try:
-                            resize_and_save(video.bytes_cover, thumb_path)
+                            # Get the URL from videoDict
+                            cover_url = videoDict["video"]["cover"]
+                            # Download the image
+                            response = requests.get(cover_url)
+                            if response.status_code == 200:
+                                resize_and_save(response.content, thumb_path)
+                            else:
+                                print(f"Failed to download thumbnail: HTTP {response.status_code}")
                         except Exception as e:
                             print(f"Thumbnail failed: {e}")
                             pbar.update(1)
