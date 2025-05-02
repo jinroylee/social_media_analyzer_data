@@ -21,17 +21,22 @@ from io import BytesIO
 from tqdm import tqdm
 from TikTokApi import TikTokApi
 import requests
+import matplotlib.pyplot as plt
 
 # ---------- tweakables ----------
-SEARCH_TERMS  = ["beauty"] #, "makeup", "cosmetics", "skincare"
-VIDEOS_PER_TAG     = 100          # stop earlier if you like
-REQUEST_CAP        = 500          # hard maximum attempts per run
+SEARCH_TERMS  = ["skincare", "makeup", "cosmetics"] #, 
+VIDEOS_PER_TAG     = 1       # stop earlier if you like
+REQUEST_CAP        = 5000          # hard maximum attempts per run
 OUT_DIR            = Path("tiktok_data")
 THUMBS_DIR         = OUT_DIR / "thumbnails"
 THUMBS_DIR.mkdir(parents=True, exist_ok=True)
 # --------------------------------
 # 
-TARGET_DATE = (dt.datetime.utcnow() - dt.timedelta(days=1)).date() #change targetdate
+# Calculate the timestamp for 1 year ago from now
+ONE_YEAR_AGO = (dt.datetime.utcnow() - dt.timedelta(days=365)).timestamp()
+
+# Legacy date calculation (not used with new filter logic)
+TARGET_DATE = (dt.datetime.utcnow() - dt.timedelta(days=30)).date() 
 TARGET_START = dt.datetime.combine(TARGET_DATE, dt.time.min).timestamp()
 TARGET_END   = dt.datetime.combine(TARGET_DATE, dt.time.max).timestamp()
 
@@ -46,12 +51,45 @@ def extract_hashtags(txt: str) -> List[str]:
 async def fetch_top_comments(video, n: int = 5) -> List[str]:
     comments = []
     try:
-        async for c in video.comments(count=50):    # pull a page
-            comments.append((c.stats["diggCount"], c.text))
-        comments.sort(reverse=True)          # by like count
-    except Exception:
-        return []
-    return [c[1] for c in comments[:n]]
+        video_comments = video.comments(count=50)
+        try:
+            first_comment = await anext(video_comments)
+            try:
+                comments.append((first_comment.as_dict["digg_count"] or 0, first_comment.text))
+                print(f"Added first comment with text: {first_comment.text[:30]}...")
+            except Exception as e:
+                print(f"Error processing first comment: {e}")
+                # if hasattr(first_comment, 'as_dict'):
+                #     print(f"First comment structure: {first_comment.as_dict}")
+                # else:
+                #     print(f"First comment doesn't have as_dict. Type: {type(first_comment)}")
+            async for c in video_comments:
+                try:
+                    comments.append((c.as_dict["digg_count"] or 0, c.text))
+                    # print(f"Added comment: {c.text[:30]}...")
+                except Exception as e:
+                    print(f"Error processing comment: {e}")
+                    if hasattr(c, 'as_dict'):
+                        print(f"Comment structure: {c.as_dict}")
+        
+        except StopAsyncIteration:
+            print("❌ No comments available for this video")
+        except Exception as e:
+            print(f"❌ Error when fetching first comment: {e}")
+            traceback.print_exc()
+            
+        print(f"Total comments collected: {len(comments)}")
+        
+        # Sort by like count if we have any comments
+        if comments:
+            comments.sort(reverse=True)
+            return [c[1] for c in comments[:n]]
+        
+    except Exception as e:
+        print(f"Error in fetch_top_comments: {e}")
+        traceback.print_exc()
+        
+    return []
 
 def load_cookies_txt(filepath: str) -> dict:
     cookies = {}
@@ -65,6 +103,11 @@ def load_cookies_txt(filepath: str) -> dict:
                 domain, flag, path, secure, expiry, name, value = parts
                 cookies[name] = value
     return cookies
+
+def print_dataset_stats(df: pd.DataFrame) -> None:
+    """Print basic statistics about the dataset."""
+    print("\n----- Dataset Statistics -----")
+    print(f"Total videos: {len(df)}")
 
 async def main():
     cookies = load_cookies_txt("cookies.txt")
@@ -98,22 +141,24 @@ async def main():
                 #     traceback.print_exc()
 
                 # Process each video
-                async for video in tag.videos(count=VIDEOS_PER_TAG):
+                videos_processed = 0  # Counter for actually processed videos
+                async for video in tag.videos(count=VIDEOS_PER_TAG * 10):  # Request more to find suitable videos
                     if attempts >= REQUEST_CAP:
                         print("Reached request cap")
                         break
                     
                     attempts += 1
                     
-                    # Filter by timestamp
-                    if not (TARGET_START <= video.create_time.timestamp() <= TARGET_END):
-                        print(f"Skipping video {video.id} - wrong timestamp")
+                    # Filter by timestamp - include videos from the last year
+                    video_timestamp = video.create_time.timestamp()
+                    if video_timestamp < ONE_YEAR_AGO:
+                        print(f"Skipping video {video.id} - too old: {video.create_time}")
                         pbar.update(1)
                         continue
 
                     # Basic metadata
                     videoDict = video.as_dict
-                    print("videoDict: ", json.dumps(videoDict, indent=4))
+                    print(f"Processing video {video.id} posted at {video.create_time}")
 
                     stats = video.stats
                     author = video.author
@@ -157,9 +202,25 @@ async def main():
                     row["thumbnail_path"] = str(thumb_path.resolve())
 
                     # Top 5 comments
-                    row["top_comments"] = await fetch_top_comments(video, n=5)
+                    print(f"Fetching top comments for video {video.id} (has {stats.get('commentCount', 0)} comments)")
+                    
+                    # Skip comment fetching if video has no comments to avoid wasting API calls
+                    if int(stats.get('commentCount', 0)) > 0:
+                        row["top_comments"] = await fetch_top_comments(video, n=5)
+                    else:
+                        print(f"Video {video.id} has no comments according to stats, skipping comment fetch")
+                        row["top_comments"] = []
+                        
                     rows.append(row)
 
+                    # Update counter for successfully processed videos
+                    videos_processed += 1
+                    
+                    # Break if we've processed the requested number of videos
+                    if videos_processed >= VIDEOS_PER_TAG:
+                        print(f"Reached target of {VIDEOS_PER_TAG} videos for {search_term}")
+                        break
+                        
                     # polite spacing
                     await asyncio.sleep(random.uniform(2, 4))
                     if attempts % 20 == 0:
@@ -176,12 +237,41 @@ async def main():
                 continue
                 
     if rows:
-        df = pd.DataFrame(rows)
-        parquet_name = OUT_DIR / f"beauty_tiktok_{TARGET_DATE.isoformat()}.parquet"
-        df.to_parquet(parquet_name, index=False)
-        print(f"\n✅ Saved {len(df)} rows to {parquet_name}")
+        # Define a fixed parquet filename - no longer using date in filename
+        parquet_name = OUT_DIR / "tiktok_beauty_dataset.parquet"
+        
+        # Check if the file already exists and load it
+        if parquet_name.exists():
+            print(f"Loading existing dataset from {parquet_name}")
+            existing_df = pd.read_parquet(parquet_name)
+            print(f"Existing dataset has {len(existing_df)} rows")
+            
+            # Convert new rows to DataFrame
+            new_df = pd.DataFrame(rows)
+            print(f"New data has {len(new_df)} rows")
+            
+            # Check for duplicates by video_id
+            existing_video_ids = set(existing_df['video_id'].values)
+            new_df = new_df[~new_df['video_id'].isin(existing_video_ids)]
+            print(f"After removing duplicates, adding {len(new_df)} new rows")
+            
+            # Concatenate and save if there are new rows to add
+            if len(new_df) > 0:
+                combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                combined_df.to_parquet(parquet_name, index=False)
+                print(f"\n✅ Saved {len(combined_df)} total rows to {parquet_name} (added {len(new_df)} new rows)")
+                print_dataset_stats(combined_df)
+            else:
+                print("\n⚠️ No new unique videos to add to the dataset")
+                print_dataset_stats(existing_df)
+        else:
+            # First time creating the file
+            df = pd.DataFrame(rows)
+            df.to_parquet(parquet_name, index=False)
+            print(f"\n✅ Created new dataset with {len(df)} rows at {parquet_name}")
+            print_dataset_stats(df)
     else:
-        print("❌ No matching videos found today. Try again tomorrow!")
+        print("❌ No matching videos found. Try again later!")
 
 if __name__ == "__main__":
     asyncio.run(main())
