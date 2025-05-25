@@ -25,7 +25,34 @@ import requests
 import matplotlib.pyplot as plt
 
 # ---------- tweakables ----------
-SEARCH_TERMS  = ["skincare", "makeup", "cosmetics", "makeuptutorial", "nightroutine", "morningroutine", "skincareroutine", "vlog", ] #, , 
+SEARCH_TERMS  = [
+  "tonerrecommendation",
+  "serumreview",
+  "koreancosmetics",
+  "japaneseskincare",
+  "skincaretips",
+  "kbeautyroutine",
+  "ulzzangmakeup",
+  "kmakeup",
+  "jskincare",
+  "sheetmask",
+  "beautyreview",
+  "asianbeauty",
+  "koreabeautyproducts",
+  "tokyomakeup",
+  "cosmeランキング",       
+  "韓国メイク",              
+  "メイク好きさんと繋がりたい", 
+  "垢抜けメイク",            
+  "スキンケアマニア",         
+  "メイクレビュー",         
+  "時短メイク",             
+  "プチプラコスメ",         
+  "デパコス",              
+  "ナチュラルメイク",       
+  "韓国アイドルメイク",      
+  "メイク動画",             
+]
 VIDEOS_PER_TAG     = 100000       # stop earlier if you like
 REQUEST_CAP        = 5000          # hard maximum attempts per run
 OUT_DIR            = Path("tiktok_data")

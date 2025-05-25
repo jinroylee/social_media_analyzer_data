@@ -1,7 +1,7 @@
 # Ignore tiktok data folder and all its contents
-/tiktok_data/
-tiktok_data/
-**/tiktok_data/
+/tiktok_data/thumbnails/
+tiktok_data/thumbnails/
+**/tiktok_data/thumbnails/
 
 # Python
 __pycache__/
