@@ -32,7 +32,7 @@ import requests
 S3_BUCKET = os.environ.get('S3_BUCKET', 'socialmediaanalyzer')
 S3_DATA_KEY = 'raw/data/tiktok_data.parquet'
 S3_THUMBNAILS_PREFIX = 'raw/thumbnails/'
-AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+AWS_REGION = os.environ.get('AWS_REGION', 'ap-northeast-2')
 
 # ---------- Configuration ----------
 SEARCH_TERMS = [

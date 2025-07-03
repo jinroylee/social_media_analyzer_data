@@ -38,3 +38,15 @@ env/
 # OS specific files
 .DS_Store
 Thumbs.db 
+
+lambda_layer/*
+lambda_package/*
+lambda_package_minimal/*
+lambda_deployment_simple.zip
+lambda_deployment_optimized.zip
+lambda_layer/
+lambda_package/
+lambda_package_minimal/
+lambda_deployment.zip
+lambda_deployment_simple.zip
+lambda_deployment_optimized.zip

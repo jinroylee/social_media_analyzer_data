@@ -11,7 +11,7 @@ RUNTIME="python3.9"
 HANDLER="src/tiktok_data_collect_s3.lambda_handler"
 MEMORY_SIZE=3008  # Maximum memory for Lambda
 TIMEOUT=900       # 15 minutes (maximum for Lambda)
-REGION="us-east-1"
+REGION="ap-northeast-2"
 
 # Directories
 PACKAGE_DIR="lambda_package"
@@ -68,7 +68,7 @@ echo "To deploy manually using AWS CLI:"
 echo "aws lambda create-function \\"
 echo "  --function-name $FUNCTION_NAME \\"
 echo "  --runtime $RUNTIME \\"
-echo "  --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-execution-role \\"
+echo "  --role arn:aws:iam::777022888924:role/lambda-socialmediaanalyzer-collector-role \\"
 echo "  --handler $HANDLER \\"
 echo "  --zip-file fileb://lambda_deployment.zip \\"
 echo "  --memory-size $MEMORY_SIZE \\"
